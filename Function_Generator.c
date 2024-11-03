@@ -45,7 +45,7 @@ WaveHeader makeHeader(int sampleRate, int sampleSize, int sampleNum, int numChan
     return wh;
 }
 
-// 波形生成函數
+//判斷波型種類，並產生波形
 void generate_wave(float *buffer, int fs, int samples, float f, float A, const char *wavetype) {
     for (int i = 0; i < samples; i++) {
         float t = (float)i / fs;
@@ -63,27 +63,24 @@ void generate_wave(float *buffer, int fs, int samples, float f, float A, const c
     }
 }
 
-// 音訊資料寫入函數
+//將資料寫入wav檔案，分成8 bits, 16 bits, 32 bits
 void write_samples_to_wav(int m, float *buffer, int samples, FILE *wav_file) {
     if (m == 8) {
         for (int i = 0; i < samples; i++) {
-            // 限制範圍，避免溢出
             float sample = fminf(fmaxf(buffer[i], -1.0), 1.0);
-            unsigned char output = (unsigned char)((sample + 1.0) * 127.5); // 8-bit 無符號
+            unsigned char output = (unsigned char)((sample + 1.0) * 127.5); // 8-bit
             fwrite(&output, sizeof(unsigned char), 1, wav_file);
         }
     } else if (m == 16) {
         for (int i = 0; i < samples; i++) {
-            // 限制範圍，避免溢出
             float sample = fminf(fmaxf(buffer[i], -1.0), 1.0);
-            short int output = (short int)(sample * 32767); // 16-bit 有符號
+            short int output = (short int)(sample * 32767); // 16-bit
             fwrite(&output, sizeof(short int), 1, wav_file);
         }
     } else if (m == 32) {
         for (int i = 0; i < samples; i++) {
-            // 限制範圍，避免溢出
             float sample = fminf(fmaxf(buffer[i], -1.0), 1.0);
-            int output = (int)(sample * 2147483647); // 32-bit 有符號
+            int output = (int)(sample * 2147483647); // 32-bit
             fwrite(&output, sizeof(int), 1, wav_file);
         }
     } else {
@@ -91,6 +88,7 @@ void write_samples_to_wav(int m, float *buffer, int samples, FILE *wav_file) {
     }
 }
 
+//計算sqnr
 float calculate_sqnr(float *signal, int samples, int m) {
     float signal_power = 0.0, noise_power = 0.0;
 
@@ -135,12 +133,9 @@ int main(int argc, char **argv) {
 
     WaveHeader header = makeHeader(fs, m, samples, c);
 
-    // 將 WAV 標頭寫入 stdout，將被重定向到 fn.wav
     fwrite(&header, sizeof(WaveHeader), 1, stdout);
-    // 將音訊樣本寫入 stdout，將被重定向到 fn.wav
     write_samples_to_wav(m, buffer, samples, stdout);
 
-    // 計算並將 SQNR 寫入 stderr，將被重定向到 sqnr.txt
     float sqnr = calculate_sqnr(buffer, samples, m);
     fprintf(stderr, "SQNR: %.15f dB\n", sqnr);
 
