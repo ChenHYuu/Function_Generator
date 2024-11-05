@@ -45,7 +45,6 @@ WaveHeader makeHeader(int sampleRate, int sampleSize, int sampleNum, int numChan
     return wh;
 }
 
-//判斷波型種類，並產生波形
 void generate_wave(float *buffer, int fs, int samples, float f, float A, const char *wavetype) {
     for (int i = 0; i < samples; i++) {
         float t = (float)i / fs;
@@ -63,32 +62,28 @@ void generate_wave(float *buffer, int fs, int samples, float f, float A, const c
     }
 }
 
-//將資料寫入wav檔案，分成8 bits, 16 bits, 32 bits
-void write_samples_to_wav(int m, float *buffer, int samples, FILE *wav_file) {
-    if (m == 8) {
-        for (int i = 0; i < samples; i++) {
-            float sample = fminf(fmaxf(buffer[i], -1.0), 1.0);
-            unsigned char output = (unsigned char)((sample + 1.0) * 127.5); // 8-bit
+void normalize_samples(float *buffer, int samples, int m, FILE *wav_file) {
+    float max_amplitude = (m == 8) ? 127.5 : (m == 16) ? 32767.0 : 2147483647.0;
+    for (int i = 0; i < samples; i++) {
+        buffer[i] = (buffer[i] + 1.0) / 2.0 * max_amplitude;
+        
+        if (m == 8) {
+            unsigned char output = (unsigned char)buffer[i];
             fwrite(&output, sizeof(unsigned char), 1, wav_file);
-        }
-    } else if (m == 16) {
-        for (int i = 0; i < samples; i++) {
-            float sample = fminf(fmaxf(buffer[i], -1.0), 1.0);
-            short int output = (short int)(sample * 32767); // 16-bit
+        } else if (m == 16) {
+            short int output = (short int)buffer[i];
             fwrite(&output, sizeof(short int), 1, wav_file);
-        }
-    } else if (m == 32) {
-        for (int i = 0; i < samples; i++) {
-            float sample = fminf(fmaxf(buffer[i], -1.0), 1.0);
-            int output = (int)(sample * 2147483647); // 32-bit
+        } else if (m == 32) {
+            int output = (int)buffer[i];
             fwrite(&output, sizeof(int), 1, wav_file);
+        } else {
+            fprintf(stderr, "[Error] 不支援的 sampple size: %d\n", m);
+            return;
         }
-    } else {
-        fprintf(stderr, "不支援的位元深度: %d\n", m);
     }
 }
 
-//計算sqnr
+
 float calculate_sqnr(float *signal, int samples, int m) {
     float signal_power = 0.0, noise_power = 0.0;
 
@@ -110,7 +105,7 @@ float calculate_sqnr(float *signal, int samples, int m) {
 
 int main(int argc, char **argv) {
     if (argc != 8) {
-        fprintf(stderr, "使用方法: mini_prj_3_xxxxxxxxx fs m c wavetype f A T 1> fn.wav 2> sqnr.txt\n");
+        fprintf(stderr, "[Error] 使用方法: mini_prj_3_xxxxxxxxx fs m c wavetype f A T 1> fn.wav 2> sqnr.txt\n");
         return 1;
     }
 
@@ -125,7 +120,7 @@ int main(int argc, char **argv) {
     int samples = (int)(fs * T);
     float *buffer = (float *)malloc(samples * sizeof(float));
     if (buffer == NULL) {
-        fprintf(stderr, "記憶體配置失敗\n");
+        fprintf(stderr, "[Error] 記憶體配置失敗\n");
         return 1;
     }
 
@@ -134,7 +129,7 @@ int main(int argc, char **argv) {
     WaveHeader header = makeHeader(fs, m, samples, c);
 
     fwrite(&header, sizeof(WaveHeader), 1, stdout);
-    write_samples_to_wav(m, buffer, samples, stdout);
+    normalize_samples(buffer, samples, m, stdout);
 
     float sqnr = calculate_sqnr(buffer, samples, m);
     fprintf(stderr, "SQNR: %.15f dB\n", sqnr);
