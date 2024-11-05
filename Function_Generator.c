@@ -45,60 +45,59 @@ WaveHeader makeHeader(int sampleRate, int sampleSize, int sampleNum, int numChan
     return wh;
 }
 
-void generate_wave(float *buffer, int fs, int samples, float f, float A, const char *wavetype) {
+void generate_wave(float *signal, float *quantized, int fs, int samples, float f, float A, const char *wavetype, int m) {
+    float max_amplitude = (m == 8) ? 127.5 : (m == 16) ? 32767.0 : 2147483647.0;
+
     for (int i = 0; i < samples; i++) {
         float t = (float)i / fs;
+
+        // 生成原始波形
         if (strcmp(wavetype, "sine") == 0) {
-            buffer[i] = A * sin(2 * PI * f * t);
+            signal[i] = A * sin(2 * PI * f * t);
         } else if (strcmp(wavetype, "square") == 0) {
-            buffer[i] = A * (sin(2 * PI * f * t) > 0 ? 1 : -1);
+            signal[i] = A * (sin(2 * PI * f * t) > 0 ? 1 : -1);
         } else if (strcmp(wavetype, "sawtooth") == 0) {
-            buffer[i] = A * (2 * (f * t - floor(0.5 + f * t)));
+            signal[i] = A * (2 * (f * t - floor(0.5 + f * t)));
         } else if (strcmp(wavetype, "triangle") == 0) {
-            buffer[i] = A * (2 * fabs(2 * (f * t - floor(0.5 + f * t))) - 1);
+            signal[i] = A * (2 * fabs(2 * (f * t - floor(0.5 + f * t))) - 1);
         } else {
-            buffer[i] = 0;
+            signal[i] = 0;
         }
+
+        // 生成量化後的訊號
+        quantized[i] = round(signal[i] * max_amplitude) / max_amplitude;
     }
 }
 
-void normalize_samples(float *buffer, int samples, int m, FILE *wav_file) {
-    float max_amplitude = (m == 8) ? 127.5 : (m == 16) ? 32767.0 : 2147483647.0;
+void normalize_samples(float *quantized, int samples, int m, FILE *wav_file) {
     for (int i = 0; i < samples; i++) {
-        buffer[i] = (buffer[i] + 1.0) / 2.0 * max_amplitude;
-        
         if (m == 8) {
-            unsigned char output = (unsigned char)buffer[i];
+            unsigned char output = (unsigned char)((quantized[i] + 1.0) / 2.0 * 255);
             fwrite(&output, sizeof(unsigned char), 1, wav_file);
         } else if (m == 16) {
-            short int output = (short int)buffer[i];
+            short int output = (short int)(quantized[i] * 32767);
             fwrite(&output, sizeof(short int), 1, wav_file);
         } else if (m == 32) {
-            int output = (int)buffer[i];
+            int output = (int)(quantized[i] * 2147483647);
             fwrite(&output, sizeof(int), 1, wav_file);
         } else {
-            fprintf(stderr, "[Error] 不支援的 sampple size: %d\n", m);
+            fprintf(stderr, "[Error] 不支援的 sample size: %d\n", m);
             return;
         }
     }
 }
 
+float calculate_sqnr(float *signal, float *quantized, int size) {
+    float signal_power = 0.0;
+    float noise_power = 0.0;
 
-float calculate_sqnr(float *signal, int samples, int m) {
-    float signal_power = 0.0, noise_power = 0.0;
-
-    for (int i = 0; i < samples; i++) {
+    for (int i = 0; i < size; i++) {
         signal_power += signal[i] * signal[i];
+        noise_power += (signal[i] - quantized[i]) * (signal[i] - quantized[i]);
     }
-    signal_power /= samples;
 
-    float quantization_step = 1.0 / (pow(2, m - 1));
-    for (int i = 0; i < samples; i++) {
-        float quantized_value = round(signal[i] / quantization_step) * quantization_step;
-        float error = quantized_value - signal[i];
-        noise_power += error * error;
-    }
-    noise_power /= samples;
+    signal_power /= size;
+    noise_power /= size;
 
     return 10 * log10(signal_power / noise_power);
 }
@@ -118,22 +117,25 @@ int main(int argc, char **argv) {
     float T = atof(argv[7]);
 
     int samples = (int)(fs * T);
-    float *buffer = (float *)malloc(samples * sizeof(float));
-    if (buffer == NULL) {
+    float *signal = (float *)malloc(samples * sizeof(float));
+    float *quantized = (float *)malloc(samples * sizeof(float));
+    if (signal == NULL || quantized == NULL) {
         fprintf(stderr, "[Error] 記憶體配置失敗\n");
+        free(signal);
+        free(quantized);
         return 1;
     }
 
-    generate_wave(buffer, fs, samples, f, A, wavetype);
+    generate_wave(signal, quantized, fs, samples, f, A, wavetype, m);
 
     WaveHeader header = makeHeader(fs, m, samples, c);
-
     fwrite(&header, sizeof(WaveHeader), 1, stdout);
-    normalize_samples(buffer, samples, m, stdout);
+    normalize_samples(quantized, samples, m, stdout);
 
-    float sqnr = calculate_sqnr(buffer, samples, m);
+    float sqnr = calculate_sqnr(signal, quantized, samples);
     fprintf(stderr, "SQNR: %.15f dB\n", sqnr);
 
-    free(buffer);
+    free(signal);
+    free(quantized);
     return 0;
 }
